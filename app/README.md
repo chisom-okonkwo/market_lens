@@ -18,6 +18,13 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Manual Prompt Path (Temporary)
+
+- Frontend route: `/manual-prompt`
+- API route: `POST /api/manual-prompt`
+
+This route is a temporary manual input source used while the full Query Intelligence System (QIS) is being built. It enables simple prompt submission and validation now, and is expected to either coexist with or be superseded by QIS-driven prompt generation later.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More
