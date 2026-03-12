@@ -1,12 +1,10 @@
-import {
-  type ManualPromptRequest,
-  type ManualPromptResponse,
-} from "@/lib/manualPrompt";
+import { type AIResponse } from "@/lib/aiResponse";
+import { type ManualPromptRequest } from "@/lib/manualPrompt";
 
 const FALLBACK_SUBMIT_ERROR = "Unable to submit prompt right now.";
 
 export interface SubmitManualPromptResult {
-  message?: string;
+  responses?: AIResponse[];
   ok: boolean;
   error?: string;
 }
@@ -26,7 +24,7 @@ export async function submitManualPrompt(
   const payload: ManualPromptRequest = { prompt };
 
   try {
-    const response = await fetch("/api/manual-prompt", {
+    const response = await fetch("/api/prompt-execution", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -42,11 +40,11 @@ export async function submitManualPrompt(
       };
     }
 
-    const result = (await response.json()) as ManualPromptResponse;
+    const result = (await response.json()) as AIResponse[];
 
     return {
       ok: true,
-      message: result.message,
+      responses: result,
     };
   } catch {
     return {

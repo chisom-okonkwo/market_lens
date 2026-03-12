@@ -2,6 +2,7 @@
 
 import { type FormEvent, useState } from "react";
 
+import { type AIResponse } from "@/lib/aiResponse";
 import { submitManualPrompt } from "@/lib/manualPromptClient";
 
 const EMPTY_PROMPT_ERROR = "Please enter a prompt before submitting.";
@@ -10,11 +11,11 @@ const FALLBACK_SUBMIT_ERROR = "Unable to submit prompt right now.";
 export default function ManualPromptPage() {
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [responses, setResponses] = useState<AIResponse[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const promptHintId = "manual-prompt-hint";
   const promptFeedbackId = "manual-prompt-feedback";
-  const promptDescribedBy = [promptHintId, error || successMessage ? promptFeedbackId : ""]
+  const promptDescribedBy = [promptHintId, error ? promptFeedbackId : ""]
     .filter(Boolean)
     .join(" ");
   const isSubmitDisabled = prompt.trim().length === 0;
@@ -26,9 +27,7 @@ export default function ManualPromptPage() {
       setError("");
     }
 
-    if (successMessage) {
-      setSuccessMessage("");
-    }
+    setResponses([]);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -37,12 +36,12 @@ export default function ManualPromptPage() {
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt) {
       setError(EMPTY_PROMPT_ERROR);
-      setSuccessMessage("");
+      setResponses([]);
       return;
     }
 
     setError("");
-    setSuccessMessage("");
+    setResponses([]);
     setIsSubmitting(true);
 
     try {
@@ -53,10 +52,7 @@ export default function ManualPromptPage() {
         return;
       }
 
-      if (result.message) {
-        setSuccessMessage(result.message);
-        setPrompt("");
-      }
+      setResponses(result.responses ?? []);
     } finally {
       setIsSubmitting(false);
     }
@@ -103,11 +99,6 @@ export default function ManualPromptPage() {
                 {error}
               </p>
             ) : null}
-            {successMessage ? (
-              <p id={promptFeedbackId} className="mt-2 text-sm text-green-700" role="status">
-                {successMessage}
-              </p>
-            ) : null}
           </div>
 
           <button
@@ -118,6 +109,24 @@ export default function ManualPromptPage() {
             {isSubmitting ? "Submitting..." : "Submit Prompt"}
           </button>
         </form>
+
+        {responses.length > 0 ? (
+          <section className="mt-8 border-t border-zinc-200 pt-6">
+            <h2 className="text-lg font-semibold text-zinc-900">AI Output</h2>
+            <div className="mt-4 space-y-4">
+              {responses.map((response) => (
+                <article key={`${response.platform}-${response.promptId}`} className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-600">
+                    {response.platform} {response.model ? `(${response.model})` : ""}
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900">
+                    {response.responseText || "No response text returned."}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </section>
     </main>
   );

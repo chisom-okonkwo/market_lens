@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ManualPromptPage from "@/app/manual-prompt/page";
+import { AIPlatform } from "@/lib/aiResponse";
 import { submitManualPrompt } from "@/lib/manualPromptClient";
 
 vi.mock("@/lib/manualPromptClient", () => ({
@@ -33,10 +34,23 @@ describe("ManualPromptPage", () => {
     expect(submitManualPromptMock).not.toHaveBeenCalled();
   });
 
-  it("submits a trimmed prompt and shows success", async () => {
+  it("submits a trimmed prompt and shows AI output", async () => {
     submitManualPromptMock.mockResolvedValue({
       ok: true,
-      message: "Manual prompt received successfully.",
+      responses: [
+        {
+          promptId: "prompt-123",
+          platform: AIPlatform.ChatGPT,
+          model: "gpt-4o-mini",
+          prompt: "Best cordless drill",
+          responseText: "DeWalt and Bosch are great beginner options.",
+          timestamp: new Date().toISOString(),
+          sources: [],
+          citations: [],
+          links: [],
+          rankingOrder: ["DeWalt", "Bosch"],
+        },
+      ],
     });
 
     render(<ManualPromptPage />);
@@ -49,7 +63,10 @@ describe("ManualPromptPage", () => {
       expect(submitManualPromptMock).toHaveBeenCalledWith("Best cordless drill");
     });
 
-    expect(await screen.findByText("Manual prompt received successfully.")).toBeInTheDocument();
+    expect(await screen.findByText("AI Output")).toBeInTheDocument();
+    expect(
+      await screen.findByText("DeWalt and Bosch are great beginner options."),
+    ).toBeInTheDocument();
   });
 
   it("shows an error message when request fails", async () => {
