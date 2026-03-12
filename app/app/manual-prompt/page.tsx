@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from "react";
 
 import { type AIResponse } from "@/lib/aiResponse";
+import { type EntityDetectionResult } from "@/lib/ai/entityDetection/types";
 import { submitManualPrompt } from "@/lib/manualPromptClient";
 
 const EMPTY_PROMPT_ERROR = "Please enter a prompt before submitting.";
@@ -12,6 +13,7 @@ export default function ManualPromptPage() {
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [responses, setResponses] = useState<AIResponse[]>([]);
+  const [entityDetections, setEntityDetections] = useState<EntityDetectionResult[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const promptHintId = "manual-prompt-hint";
   const promptFeedbackId = "manual-prompt-feedback";
@@ -28,6 +30,7 @@ export default function ManualPromptPage() {
     }
 
     setResponses([]);
+    setEntityDetections([]);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -37,11 +40,13 @@ export default function ManualPromptPage() {
     if (!trimmedPrompt) {
       setError(EMPTY_PROMPT_ERROR);
       setResponses([]);
+      setEntityDetections([]);
       return;
     }
 
     setError("");
     setResponses([]);
+    setEntityDetections([]);
     setIsSubmitting(true);
 
     try {
@@ -53,6 +58,7 @@ export default function ManualPromptPage() {
       }
 
       setResponses(result.responses ?? []);
+      setEntityDetections(result.entityDetections ?? []);
     } finally {
       setIsSubmitting(false);
     }
@@ -121,6 +127,49 @@ export default function ManualPromptPage() {
                   </p>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900">
                     {response.responseText || "No response text returned."}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {entityDetections.length > 0 ? (
+          <section className="mt-8 border-t border-zinc-200 pt-6">
+            <h2 className="text-lg font-semibold text-zinc-900">Entity Detection Output</h2>
+            <div className="mt-4 space-y-4">
+              {entityDetections.map((detection) => (
+                <article
+                  key={detection.responseId}
+                  className="rounded-md border border-zinc-200 bg-zinc-50 p-4"
+                >
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-600">
+                    {detection.responseId}
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-800">
+                    <span className="font-medium">Sentiment:</span> {detection.sentiment}
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-800">
+                    <span className="font-medium">Brands:</span>{" "}
+                    {detection.brandMentions.length > 0
+                      ? detection.brandMentions.join(", ")
+                      : "None"}
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-800">
+                    <span className="font-medium">Products:</span>{" "}
+                    {detection.productMentions.length > 0
+                      ? detection.productMentions.join(", ")
+                      : "None"}
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-800">
+                    <span className="font-medium">Retailers:</span>{" "}
+                    {detection.retailerMentions.length > 0
+                      ? detection.retailerMentions.join(", ")
+                      : "None"}
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-800">
+                    <span className="font-medium">Claims:</span>{" "}
+                    {detection.claims.length > 0 ? detection.claims.join(" | ") : "None"}
                   </p>
                 </article>
               ))}

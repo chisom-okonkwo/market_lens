@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { responseEntityDetectionOrchestrator } from "@/lib/ai/orchestration/responseEntityDetectionOrchestrator";
 import { promptExecutionQueue } from "@/lib/ai/queue/promptExecutionQueue";
 
 interface PromptExecutionRequest {
@@ -29,8 +30,11 @@ export async function POST(request: Request) {
 
   try {
     const jobResult = await promptExecutionQueue.enqueue(prompt);
+    const payload = responseEntityDetectionOrchestrator.processCollectedResponses(
+      jobResult.responses,
+    );
 
-    return NextResponse.json(jobResult.responses, { status: 200 });
+    return NextResponse.json(payload, { status: 200 });
   } catch (error) {
     const message =
       error instanceof Error

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ManualPromptPage from "@/app/manual-prompt/page";
 import { AIPlatform } from "@/lib/aiResponse";
+import { EntitySentiment } from "@/lib/ai/entityDetection/types";
 import { submitManualPrompt } from "@/lib/manualPromptClient";
 
 vi.mock("@/lib/manualPromptClient", () => ({
@@ -51,6 +52,18 @@ describe("ManualPromptPage", () => {
           rankingOrder: ["DeWalt", "Bosch"],
         },
       ],
+      entityDetections: [
+        {
+          responseId: "ChatGPT:prompt-123",
+          brandMentions: ["DeWalt", "Bosch"],
+          productMentions: ["DeWalt DCD771"],
+          retailerMentions: ["Amazon"],
+          claims: ["The best cordless drills include the DeWalt DCD771"],
+          sentiment: EntitySentiment.Positive,
+          rawText: "DeWalt and Bosch are great beginner options.",
+          extractedAt: new Date().toISOString(),
+        },
+      ],
     });
 
     render(<ManualPromptPage />);
@@ -64,9 +77,12 @@ describe("ManualPromptPage", () => {
     });
 
     expect(await screen.findByText("AI Output")).toBeInTheDocument();
+    expect(await screen.findByText("Entity Detection Output")).toBeInTheDocument();
     expect(
       await screen.findByText("DeWalt and Bosch are great beginner options."),
     ).toBeInTheDocument();
+    expect(await screen.findByText("Sentiment:", { exact: false })).toBeInTheDocument();
+    expect(await screen.findByText("Brands:", { exact: false })).toBeInTheDocument();
   });
 
   it("shows an error message when request fails", async () => {

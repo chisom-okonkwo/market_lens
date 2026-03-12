@@ -1,12 +1,19 @@
 import { type AIResponse } from "@/lib/aiResponse";
+import { type EntityDetectionResult } from "@/lib/ai/entityDetection/types";
 import { type ManualPromptRequest } from "@/lib/manualPrompt";
 
 const FALLBACK_SUBMIT_ERROR = "Unable to submit prompt right now.";
 
 export interface SubmitManualPromptResult {
   responses?: AIResponse[];
+  entityDetections?: EntityDetectionResult[];
   ok: boolean;
   error?: string;
+}
+
+interface PromptExecutionPayload {
+  responses: AIResponse[];
+  entityDetections: EntityDetectionResult[];
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
@@ -40,11 +47,12 @@ export async function submitManualPrompt(
       };
     }
 
-    const result = (await response.json()) as AIResponse[];
+    const result = (await response.json()) as PromptExecutionPayload;
 
     return {
       ok: true,
-      responses: result,
+      responses: result.responses,
+      entityDetections: result.entityDetections,
     };
   } catch {
     return {
