@@ -1,5 +1,6 @@
 import { AIPlatform, type AIResponse } from "@/lib/aiResponse";
 import { ChatGptConnector } from "@/lib/ai/connectors/chatGptConnector";
+import { ClaudeConnector } from "@/lib/ai/connectors/claudeConnector";
 import { GeminiConnector } from "@/lib/ai/connectors/geminiConnector";
 import { AIConnectorRegistry } from "@/lib/ai/connectors/registry";
 import { type AIConnector } from "@/lib/ai/connectors/types";
@@ -50,6 +51,10 @@ function createDefaultConnectors(): AIConnector[] {
 
   if (process.env.OPENAI_API_KEY) {
     connectors.push(new ChatGptConnector());
+  }
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    connectors.push(new ClaudeConnector());
   }
 
   if (process.env.GEMINI_API_KEY) {
