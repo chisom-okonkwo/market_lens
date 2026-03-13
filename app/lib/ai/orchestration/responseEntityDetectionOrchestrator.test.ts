@@ -6,10 +6,11 @@ import {
   ResponseEntityDetectionOrchestrator,
   type EntityDetectionRunner,
   type HallucinationAnalyzer,
+  type ProcessedResponseStore,
 } from "@/lib/ai/orchestration/responseEntityDetectionOrchestrator";
 
 describe("ResponseEntityDetectionOrchestrator", () => {
-  it("maps collected responses into entity detections", () => {
+  it("maps collected responses into entity detections and persists the processed snapshot", async () => {
     const mockEntityDetectionResult = {
       responseId: "ChatGPT:prompt-123",
       brandMentions: ["DeWalt"],
@@ -43,9 +44,14 @@ describe("ResponseEntityDetectionOrchestrator", () => {
       analyze: vi.fn().mockReturnValue(mockAccuracyAnalysis),
     };
 
+    const responseStore: ProcessedResponseStore = {
+      saveProcessedResponse: vi.fn().mockResolvedValue(undefined),
+    };
+
     const orchestrator = new ResponseEntityDetectionOrchestrator(
       entityDetectionRunner,
       hallucinationAnalyzer,
+      responseStore,
     );
 
     const responses: AIResponse[] = [
@@ -62,7 +68,7 @@ describe("ResponseEntityDetectionOrchestrator", () => {
       },
     ];
 
-    const result = orchestrator.processCollectedResponses(responses);
+    const result = await orchestrator.processCollectedResponses(responses);
 
     expect(entityDetectionRunner.detect).toHaveBeenCalledWith({
       responseId: "ChatGPT:prompt-123",
@@ -71,6 +77,11 @@ describe("ResponseEntityDetectionOrchestrator", () => {
     expect(hallucinationAnalyzer.analyze).toHaveBeenCalledWith({
       responseId: "ChatGPT:prompt-123",
       claims: ["The best cordless drills include the DeWalt DCD771"],
+    });
+    expect(responseStore.saveProcessedResponse).toHaveBeenCalledWith({
+      response: responses[0],
+      entityDetection: mockEntityDetectionResult,
+      accuracyAnalysis: mockAccuracyAnalysis,
     });
     expect(result.responses).toEqual(responses);
     expect(result.entityDetections).toHaveLength(1);

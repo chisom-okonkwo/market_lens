@@ -8,7 +8,8 @@ import { type AIResponseRepository } from "@/lib/ai/storage/aiResponseRepository
 describe("PromptExecutionService", () => {
   it("returns structured AIResponse entries for all registered connectors", async () => {
     const repository: AIResponseRepository = {
-      save: vi.fn().mockResolvedValue(undefined),
+      saveRawResponse: vi.fn().mockResolvedValue(undefined),
+      saveProcessedResponse: vi.fn().mockResolvedValue(undefined),
       findByPromptId: vi.fn(),
       listAll: vi.fn(),
     };
@@ -33,18 +34,8 @@ describe("PromptExecutionService", () => {
     const result = await service.execute("  Best cordless drill for beginners  ");
 
     expect(connector.executePrompt).toHaveBeenCalledWith("Best cordless drill for beginners");
-    expect(repository.save).toHaveBeenCalledTimes(1);
-    expect(repository.save).toHaveBeenCalledWith({
-      promptId: "test-prompt-id",
-      platform: AIPlatform.ChatGPT,
-      model: "gpt-4o-mini",
-      prompt: "Best cordless drill for beginners",
-      responseText: "DeWalt is a top beginner-friendly option.",
-      timestamp: result[0].timestamp,
-      sources: [{ name: "Tech Radar", url: "https://example.com/tech-radar" }],
-      citations: [{ title: "Review", url: "https://example.com/review" }],
-      links: [{ label: "Home Depot", url: "https://example.com/home-depot" }],
-    });
+    expect(repository.saveRawResponse).toHaveBeenCalledTimes(1);
+    expect(repository.saveRawResponse).toHaveBeenCalledWith(result[0]);
     expect(result).toHaveLength(1);
     expect(result[0].platform).toBe(AIPlatform.ChatGPT);
     expect(result[0].model).toBe("gpt-4o-mini");
@@ -60,7 +51,8 @@ describe("PromptExecutionService", () => {
 
   it("throws when prompt is empty", async () => {
     const repository: AIResponseRepository = {
-      save: vi.fn().mockResolvedValue(undefined),
+      saveRawResponse: vi.fn().mockResolvedValue(undefined),
+      saveProcessedResponse: vi.fn().mockResolvedValue(undefined),
       findByPromptId: vi.fn(),
       listAll: vi.fn(),
     };
@@ -70,12 +62,13 @@ describe("PromptExecutionService", () => {
     await expect(service.execute("   ")).rejects.toThrow(
       "Prompt is required and cannot be empty.",
     );
-    expect(repository.save).not.toHaveBeenCalled();
+    expect(repository.saveRawResponse).not.toHaveBeenCalled();
   });
 
   it("throws when no connectors are configured", async () => {
     const repository: AIResponseRepository = {
-      save: vi.fn().mockResolvedValue(undefined),
+      saveRawResponse: vi.fn().mockResolvedValue(undefined),
+      saveProcessedResponse: vi.fn().mockResolvedValue(undefined),
       findByPromptId: vi.fn(),
       listAll: vi.fn(),
     };
@@ -85,6 +78,6 @@ describe("PromptExecutionService", () => {
     await expect(service.execute("Best cordless drill")).rejects.toThrow(
       "No AI connectors are configured.",
     );
-    expect(repository.save).not.toHaveBeenCalled();
+    expect(repository.saveRawResponse).not.toHaveBeenCalled();
   });
 });

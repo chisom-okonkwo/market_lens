@@ -11,6 +11,11 @@ import {
   type AnalyzeHallucinationInput,
   type ResponseAccuracyAnalysis,
 } from "@/lib/ai/hallucinationDetection/types";
+import {
+  aiResponseRepository,
+  type AIProcessedResponseRecord,
+  type AIResponseRepository,
+} from "@/lib/ai/storage/aiResponseRepository";
 
 export interface CollectedResponsesWithEntities {
   responses: AIResponse[];
@@ -26,37 +31,60 @@ export interface HallucinationAnalyzer {
   analyze(input: AnalyzeHallucinationInput): ResponseAccuracyAnalysis;
 }
 
+export interface ProcessedResponseStore {
+  saveProcessedResponse(record: AIProcessedResponseRecord): Promise<void>;
+}
+
 export class ResponseEntityDetectionOrchestrator {
   private readonly entityDetectionRunner: EntityDetectionRunner;
   private readonly hallucinationAnalyzer: HallucinationAnalyzer;
+  private readonly responseStore: ProcessedResponseStore;
 
   public constructor(
     entityDetectionRunner: EntityDetectionRunner = new EntityDetectionService(),
     hallucinationAnalyzer: HallucinationAnalyzer = new HallucinationDetectionService(),
+    responseStore: ProcessedResponseStore = aiResponseRepository,
   ) {
     this.entityDetectionRunner = entityDetectionRunner;
     this.hallucinationAnalyzer = hallucinationAnalyzer;
+    this.responseStore = responseStore;
   }
 
-  public processCollectedResponses(responses: AIResponse[]): CollectedResponsesWithEntities {
-    const entityDetections = responses.map((response) =>
-      this.entityDetectionRunner.detect({
+  public async processCollectedResponses(
+    responses: AIResponse[],
+  ): Promise<CollectedResponsesWithEntities> {
+    const processedResponses = responses.map((response) => {
+      const entityDetection = this.entityDetectionRunner.detect({
         responseId: this.buildResponseId(response),
         rawText: response.responseText,
-      }),
-    );
+      });
 
-    const accuracyAnalyses = entityDetections.map((detection) =>
-      this.hallucinationAnalyzer.analyze({
-        responseId: detection.responseId,
-        claims: detection.claims,
-      }),
+      const accuracyAnalysis = this.hallucinationAnalyzer.analyze({
+        responseId: entityDetection.responseId,
+        claims: entityDetection.claims,
+      });
+
+      return {
+        response,
+        entityDetection,
+        accuracyAnalysis,
+      };
+    });
+
+    await Promise.all(
+      processedResponses.map((entry) =>
+        this.responseStore.saveProcessedResponse({
+          response: entry.response,
+          entityDetection: entry.entityDetection,
+          accuracyAnalysis: entry.accuracyAnalysis,
+        }),
+      ),
     );
 
     return {
       responses,
-      entityDetections,
-      accuracyAnalyses,
+      entityDetections: processedResponses.map((entry) => entry.entityDetection),
+      accuracyAnalyses: processedResponses.map((entry) => entry.accuracyAnalysis),
     };
   }
 

@@ -97,7 +97,7 @@ describe("POST /api/prompt-execution", () => {
       responses: [aiResponse],
     });
 
-    processCollectedResponsesMock.mockReturnValueOnce({
+    processCollectedResponsesMock.mockResolvedValueOnce({
       responses: [aiResponse],
       entityDetections: [
         {

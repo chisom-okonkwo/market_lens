@@ -34,3 +34,9 @@ export interface AIResponse {
   links: AIResponseLink[];
   rankingOrder?: string[];
 }
+
+export function buildAIResponseId(
+  response: Pick<AIResponse, "platform" | "promptId">,
+): string {
+  return `${response.platform}:${response.promptId}`;
+}

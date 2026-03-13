@@ -4,8 +4,7 @@ import { AIConnectorRegistry } from "@/lib/ai/connectors/registry";
 import { type AIConnector } from "@/lib/ai/connectors/types";
 import {
   type AIResponseRepository,
-  inMemoryAIResponseRepository,
-  toStoredResponse,
+  aiResponseRepository,
 } from "@/lib/ai/storage/aiResponseRepository";
 
 export class PromptExecutionService {
@@ -14,7 +13,7 @@ export class PromptExecutionService {
 
   public constructor(
     connectors: AIConnector[] = [new ChatGptConnector()],
-    responseRepository: AIResponseRepository = inMemoryAIResponseRepository,
+    responseRepository: AIResponseRepository = aiResponseRepository,
   ) {
     this.connectorRegistry = new AIConnectorRegistry(connectors);
     this.responseRepository = responseRepository;
@@ -37,7 +36,7 @@ export class PromptExecutionService {
 
     for (const connector of connectors) {
       const aiResponse = await connector.executePrompt(normalizedPrompt);
-      await this.responseRepository.save(toStoredResponse(aiResponse));
+      await this.responseRepository.saveRawResponse(aiResponse);
       responses.push(aiResponse);
     }
 

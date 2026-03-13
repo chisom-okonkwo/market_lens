@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
   try {
     const jobResult = await promptExecutionQueue.enqueue(prompt);
-    const payload = responseEntityDetectionOrchestrator.processCollectedResponses(
+    const payload = await responseEntityDetectionOrchestrator.processCollectedResponses(
       jobResult.responses,
     );
 
