@@ -1,11 +1,16 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { type AIResponse } from "@/lib/aiResponse";
 import { type EntityDetectionResult } from "@/lib/ai/entityDetection/types";
 import { type ResponseAccuracyAnalysis } from "@/lib/ai/hallucinationDetection/types";
-import { submitManualPrompt } from "@/lib/manualPromptClient";
+import { type MonitoredPrompt } from "@/lib/ai/promptSources/monitoredPromptRepository";
+import {
+	executeMonitoredPrompts,
+	loadMonitoredPrompts,
+	submitManualPrompt,
+} from "@/lib/manualPromptClient";
 
 const EMPTY_PROMPT_ERROR = "Please enter a prompt before submitting.";
 const FALLBACK_SUBMIT_ERROR = "Unable to submit prompt right now.";
@@ -18,6 +23,10 @@ export default function ManualPromptPage() {
 	const [accuracyAnalyses, setAccuracyAnalyses] = useState<ResponseAccuracyAnalysis[]>([]);
 	const [showAccuracyDetails, setShowAccuracyDetails] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [isLoadingMonitoredPrompts, setIsLoadingMonitoredPrompts] = useState(true);
+	const [isRunningMonitoredPrompts, setIsRunningMonitoredPrompts] = useState(false);
+	const [monitoredPrompts, setMonitoredPrompts] = useState<MonitoredPrompt[]>([]);
+	const [monitoredPromptError, setMonitoredPromptError] = useState("");
 	const promptHintId = "manual-prompt-hint";
 	const promptFeedbackId = "manual-prompt-feedback";
 	const promptDescribedBy = [promptHintId, error ? promptFeedbackId : ""]
@@ -37,6 +46,36 @@ export default function ManualPromptPage() {
 		setAccuracyAnalyses([]);
 		setShowAccuracyDetails(false);
 	};
+
+	useEffect(() => {
+		let isMounted = true;
+
+		const run = async () => {
+			setIsLoadingMonitoredPrompts(true);
+			const result = await loadMonitoredPrompts();
+
+			if (!isMounted) {
+				return;
+			}
+
+			if (!result.ok) {
+				setMonitoredPromptError(result.error ?? FALLBACK_SUBMIT_ERROR);
+				setMonitoredPrompts([]);
+				setIsLoadingMonitoredPrompts(false);
+				return;
+			}
+
+			setMonitoredPromptError("");
+			setMonitoredPrompts(result.prompts ?? []);
+			setIsLoadingMonitoredPrompts(false);
+		};
+
+		void run();
+
+		return () => {
+			isMounted = false;
+		};
+	}, []);
 
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -74,6 +113,32 @@ export default function ManualPromptPage() {
 		}
 	};
 
+	const handleRunMonitoredPrompts = async () => {
+		setError("");
+		setMonitoredPromptError("");
+		setResponses([]);
+		setEntityDetections([]);
+		setAccuracyAnalyses([]);
+		setShowAccuracyDetails(false);
+		setIsRunningMonitoredPrompts(true);
+
+		try {
+			const result = await executeMonitoredPrompts();
+
+			if (!result.ok) {
+				setMonitoredPromptError(result.error ?? FALLBACK_SUBMIT_ERROR);
+				return;
+			}
+
+			setMonitoredPrompts(result.prompts ?? monitoredPrompts);
+			setResponses(result.responses ?? []);
+			setEntityDetections(result.entityDetections ?? []);
+			setAccuracyAnalyses(result.accuracyAnalyses ?? []);
+		} finally {
+			setIsRunningMonitoredPrompts(false);
+		}
+	};
+
 	return (
 		<main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center px-6 py-16 sm:px-8">
 			<section className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
@@ -88,6 +153,61 @@ export default function ManualPromptPage() {
 				<p id={promptHintId} className="mt-2 text-sm text-zinc-500">
 					Use this manual flow for temporary prompt submission only.
 				</p>
+
+				<section className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+						<div>
+							<h2 className="text-sm font-semibold text-zinc-900">Monitored prompts from database</h2>
+							<p className="mt-1 text-sm text-zinc-600">
+								Load your stored Supabase search queries and run them through the AI connectors.
+							</p>
+						</div>
+						<button
+							type="button"
+							onClick={() => {
+								void handleRunMonitoredPrompts();
+							}}
+							disabled={
+								isLoadingMonitoredPrompts ||
+								isRunningMonitoredPrompts ||
+								monitoredPrompts.length === 0
+							}
+							className="inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							{isRunningMonitoredPrompts ? "Running monitored prompts..." : "Run monitored prompts"}
+						</button>
+					</div>
+
+					{monitoredPromptError ? (
+						<p className="mt-3 text-sm text-red-600" role="alert">
+							{monitoredPromptError}
+						</p>
+					) : null}
+
+					{isLoadingMonitoredPrompts ? (
+						<p className="mt-3 text-sm text-zinc-500">Loading monitored prompts...</p>
+					) : monitoredPrompts.length > 0 ? (
+						<ul className="mt-4 space-y-2">
+							{monitoredPrompts.map((storedPrompt) => (
+								<li
+									key={storedPrompt.id}
+									className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800"
+								>
+									<div className="font-medium text-zinc-900">
+										{storedPrompt.label || storedPrompt.prompt}
+									</div>
+									{storedPrompt.label ? (
+										<div className="mt-1 text-xs text-zinc-500">{storedPrompt.prompt}</div>
+									) : null}
+								</li>
+							))}
+						</ul>
+					) : (
+						<p className="mt-3 text-sm text-zinc-500">
+							No monitored prompts found. Add rows to your Supabase monitored prompts table.
+						</p>
+					)}
+				</section>
 
 				<form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
 					<div>

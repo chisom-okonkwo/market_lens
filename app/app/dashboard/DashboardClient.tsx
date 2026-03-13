@@ -430,7 +430,10 @@ function DashboardClient(props: DashboardClientProps) {
                   <span className="font-mono text-[11px] text-slate-500">same tracked prompt set</span>
                 </div>
                 <div className="flex flex-col gap-4 md:flex-row md:items-center">
-                  <DonutChart segments={props.overview.shareOfVoice} centerLabel="29%" />
+                  <DonutChart
+                    segments={props.overview.shareOfVoice}
+                    centerLabel={`${props.overview.shareOfVoice[0]?.value ?? 0}%`}
+                  />
                   <div className="flex-1 space-y-2 text-xs text-slate-600">
                     {props.overview.shareOfVoice.map((segment) => (
                       <div key={segment.label} className="flex items-center justify-between gap-3">
@@ -527,7 +530,7 @@ function DashboardClient(props: DashboardClientProps) {
                     </div>
                     <div>
                       <div className="text-sm font-semibold text-slate-900">{card.name}</div>
-                      <div className="text-[11px] text-slate-500">AI visibility: {card.score}%</div>
+                      <div className="text-[11px] text-slate-500">Observed share: {card.score}%</div>
                     </div>
                   </div>
                   <div className="mb-4 flex items-center gap-3">
@@ -554,6 +557,12 @@ function DashboardClient(props: DashboardClientProps) {
                   </button>
                 </article>
               ))}
+
+              {props.competitors.cards.length === 0 ? (
+                <article className="rounded-3xl border border-dashed border-slate-300 bg-white/70 p-5 text-sm text-slate-500 xl:col-span-3">
+                  No competitor mentions were detected in the current stored prompt runs yet.
+                </article>
+              ) : null}
             </div>
 
             <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-[0_16px_36px_rgba(15,23,42,0.06)]">

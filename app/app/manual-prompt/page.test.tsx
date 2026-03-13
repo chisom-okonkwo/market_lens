@@ -4,13 +4,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ManualPromptPage from "@/app/manual-prompt/page";
 import { AIPlatform } from "@/lib/aiResponse";
 import { EntitySentiment } from "@/lib/ai/entityDetection/types";
-import { submitManualPrompt } from "@/lib/manualPromptClient";
+import {
+  executeMonitoredPrompts,
+  loadMonitoredPrompts,
+  submitManualPrompt,
+} from "@/lib/manualPromptClient";
 
 vi.mock("@/lib/manualPromptClient", () => ({
   submitManualPrompt: vi.fn(),
+  loadMonitoredPrompts: vi.fn(),
+  executeMonitoredPrompts: vi.fn(),
 }));
 
 const submitManualPromptMock = vi.mocked(submitManualPrompt);
+const loadMonitoredPromptsMock = vi.mocked(loadMonitoredPrompts);
+const executeMonitoredPromptsMock = vi.mocked(executeMonitoredPrompts);
 
 describe("ManualPromptPage", () => {
   afterEach(() => {
@@ -19,10 +27,26 @@ describe("ManualPromptPage", () => {
 
   beforeEach(() => {
     submitManualPromptMock.mockReset();
+    loadMonitoredPromptsMock.mockReset();
+    executeMonitoredPromptsMock.mockReset();
+    loadMonitoredPromptsMock.mockResolvedValue({
+      ok: true,
+      prompts: [
+        {
+          id: "monitored-1",
+          prompt: "best cordless drill for beginners",
+          label: "Drill prompt",
+          isActive: true,
+          sortOrder: 1,
+        },
+      ],
+    });
   });
 
   it("shows validation when submitting an empty prompt", async () => {
     render(<ManualPromptPage />);
+
+    expect(await screen.findByText("Monitored prompts from database")).toBeInTheDocument();
 
     const form = screen.getByRole("button", { name: "Submit Prompt" }).closest("form");
     if (!form) {
@@ -135,5 +159,49 @@ describe("ManualPromptPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit Prompt" }));
 
     expect(await screen.findByText("Unable to submit prompt right now.")).toBeInTheDocument();
+  });
+
+  it("runs monitored prompts from the database", async () => {
+    executeMonitoredPromptsMock.mockResolvedValue({
+      ok: true,
+      prompts: [
+        {
+          id: "monitored-1",
+          prompt: "best cordless drill for beginners",
+          label: "Drill prompt",
+          isActive: true,
+          sortOrder: 1,
+        },
+      ],
+      responses: [
+        {
+          promptId: "prompt-123",
+          platform: AIPlatform.ChatGPT,
+          model: "gpt-4o-mini",
+          prompt: "best cordless drill for beginners",
+          responseText: "DeWalt and Bosch are great beginner options.",
+          timestamp: new Date().toISOString(),
+          sources: [],
+          citations: [],
+          links: [],
+          rankingOrder: ["DeWalt", "Bosch"],
+        },
+      ],
+      entityDetections: [],
+      accuracyAnalyses: [],
+      promptCount: 1,
+      responseCount: 1,
+    });
+
+    render(<ManualPromptPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Run monitored prompts" }));
+
+    await waitFor(() => {
+      expect(executeMonitoredPromptsMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(await screen.findByText("AI Output")).toBeInTheDocument();
+    expect(await screen.findByText("DeWalt and Bosch are great beginner options.")).toBeInTheDocument();
   });
 });

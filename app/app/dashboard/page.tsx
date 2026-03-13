@@ -12,6 +12,82 @@ import {
 import { buildDashboardVisibilityMetric } from "@/lib/ai/visibilityScore/dashboardVisibilityMetric";
 import { VisibilityScoreService } from "@/lib/ai/visibilityScore/visibilityScoreService";
 
+const CONTENT_THEME_STOPWORDS = new Set([
+	"a",
+	"an",
+	"and",
+	"are",
+	"best",
+	"can",
+	"do",
+	"does",
+	"for",
+	"from",
+	"how",
+	"i",
+	"in",
+	"is",
+	"me",
+	"my",
+	"near",
+	"of",
+	"on",
+	"or",
+	"should",
+	"the",
+	"to",
+	"under",
+	"what",
+	"where",
+	"with",
+	"you",
+]);
+
+type KeywordTheme = DashboardClientProps["content"]["keywords"][number] & {
+	promptCount: number;
+	mentionRate: number;
+};
+
+type ProductRanking = DashboardClientProps["content"]["products"][number];
+
+type CompetitorPalette = {
+	color: string;
+	accentBackground: string;
+	accentText: string;
+};
+
+type EntityShareStat = {
+	key: string;
+	label: string;
+	mentionCount: number;
+	promptIds: Set<string>;
+	positiveCount: number;
+	rankedCount: number;
+	firstPlaceCount: number;
+	sourceLinkedCount: number;
+};
+
+type ShareOfVoiceSnapshot = {
+	trackedShare: number;
+	trackedMentions: number;
+	totalMentions: number;
+	topCompetitorLabel: string | null;
+	topCompetitorShare: number;
+	segments: DashboardClientProps["overview"]["shareOfVoice"];
+	competitors: Array<{
+		label: string;
+		share: number;
+		stat: EntityShareStat;
+	}>;
+};
+
+const TRACKED_ENTITY_KEY = "__tracked__";
+const COMPETITOR_PALETTE: readonly CompetitorPalette[] = [
+	{ color: "#3b82f6", accentBackground: "#dbeafe", accentText: "#1e40af" },
+	{ color: "#f59e0b", accentBackground: "#fef3c7", accentText: "#92400e" },
+	{ color: "#ec4899", accentBackground: "#fce7f3", accentText: "#9d174d" },
+];
+
 function formatCompactNumber(value: number): string {
 	return new Intl.NumberFormat("en-US", {
 		notation: value >= 1000 ? "compact" : "standard",
@@ -63,6 +139,605 @@ function getTrackedTerms(): string[] {
 
 function getCurrentMonthResponses(responses: AIStoredResponse[], now: Date): AIStoredResponse[] {
 	return responses.filter((response) => isSameMonth(new Date(response.timestamp), now));
+}
+
+function getResponsesForMonth(responses: AIStoredResponse[], monthReference: Date): AIStoredResponse[] {
+	return responses.filter((response) => isSameMonth(new Date(response.timestamp), monthReference));
+}
+
+function shiftMonth(reference: Date, monthOffset: number): Date {
+	return new Date(Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth() + monthOffset, 1));
+}
+
+function normalizeContentText(value: string): string {
+	return value
+		.toLowerCase()
+		.replace(/[^a-z0-9\s]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function toTitleCase(value: string): string {
+	return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function clampPercentage(value: number): number {
+	if (value < 0) {
+		return 0;
+	}
+
+	if (value > 100) {
+		return 100;
+	}
+
+	return value;
+}
+
+function responseMentionsTrackedTerm(response: AIStoredResponse, trackedTerms: string[]): boolean {
+	const normalizedResponseText = normalizeContentText(response.responseText);
+	const detectedBrands = response.analysisPayload.entityDetection?.brandMentions ?? [];
+
+	return trackedTerms.some((term) => {
+		const normalizedTerm = normalizeContentText(term);
+		return (
+			normalizedResponseText.includes(normalizedTerm) ||
+			detectedBrands.some((brand) => normalizeContentText(brand) === normalizedTerm)
+		);
+	});
+}
+
+function extractPromptTheme(prompt: string): string {
+	const normalizedPrompt = normalizeContentText(prompt);
+	const filteredTokens = normalizedPrompt
+		.split(" ")
+		.filter((token) => token.length > 2 && !CONTENT_THEME_STOPWORDS.has(token));
+
+	if (filteredTokens.length === 0) {
+		return normalizedPrompt || prompt.trim().toLowerCase();
+	}
+
+	return filteredTokens.slice(0, 5).join(" ");
+}
+
+function leaderToneForName(name: string): DashboardClientProps["content"]["keywords"][number]["leaderTone"] {
+	const normalizedName = normalizeContentText(name);
+
+	if (normalizedName.includes("amazon")) {
+		return "blue";
+	}
+
+	if (normalizedName.includes("home depot") || normalizedName.includes("homedepot")) {
+		return "amber";
+	}
+
+	if (normalizedName.includes("wayfair")) {
+		return "pink";
+	}
+
+	return "blue";
+}
+
+function getEntityInitials(label: string): string {
+	const words = label.trim().split(/\s+/).filter(Boolean);
+
+	if (words.length === 0) {
+		return "--";
+	}
+
+	if (words.length === 1) {
+		return words[0]!.slice(0, 2).toUpperCase();
+	}
+
+	return words.slice(0, 2).map((word) => word[0]?.toUpperCase() ?? "").join("");
+}
+
+function isTrackedEntityName(name: string, trackedTerms: string[]): boolean {
+	const normalizedName = normalizeContentText(name);
+	return trackedTerms.some((term) => normalizeContentText(term) === normalizedName);
+}
+
+function extractCompetitorCandidates(response: AIStoredResponse, trackedTerms: string[]): string[] {
+	const seen = new Set<string>();
+	const orderedCandidates = [
+		...(response.rankingOrder ?? []),
+		...(response.analysisPayload.entityDetection?.retailerMentions ?? []),
+		...(response.analysisPayload.entityDetection?.brandMentions ?? []),
+	];
+
+	const competitors: string[] = [];
+
+	for (const candidate of orderedCandidates) {
+		const normalizedCandidate = normalizeContentText(candidate);
+		if (!normalizedCandidate || seen.has(normalizedCandidate)) {
+			continue;
+		}
+
+		seen.add(normalizedCandidate);
+
+		if (isTrackedEntityName(candidate, trackedTerms)) {
+			continue;
+		}
+
+		competitors.push(candidate.trim());
+	}
+
+	return competitors;
+}
+
+function collectEntityShareStats(
+	responses: AIStoredResponse[],
+	trackedTerms: string[],
+): Map<string, EntityShareStat> {
+	const stats = new Map<string, EntityShareStat>();
+
+	const ensureStat = (key: string, label: string): EntityShareStat => {
+		const existing = stats.get(key);
+		if (existing) {
+			return existing;
+		}
+
+		const next: EntityShareStat = {
+			key,
+			label,
+			mentionCount: 0,
+			promptIds: new Set<string>(),
+			positiveCount: 0,
+			rankedCount: 0,
+			firstPlaceCount: 0,
+			sourceLinkedCount: 0,
+		};
+
+		stats.set(key, next);
+		return next;
+	};
+
+	for (const response of responses) {
+		const observedEntities = new Map<string, string>();
+		const hasTrackedMention = responseMentionsTrackedTerm(response, trackedTerms);
+		const sentiment = response.analysisPayload.entityDetection?.sentiment ?? "neutral";
+		const hasSourceEvidence =
+			response.sources.length > 0 || response.citations.length > 0 || response.links.length > 0;
+
+		if (hasTrackedMention) {
+			observedEntities.set(TRACKED_ENTITY_KEY, "You");
+		}
+
+		for (const competitor of extractCompetitorCandidates(response, trackedTerms)) {
+			observedEntities.set(normalizeContentText(competitor), competitor);
+		}
+
+		for (const [key, label] of observedEntities.entries()) {
+			const stat = ensureStat(key, key === TRACKED_ENTITY_KEY ? "You" : label);
+			stat.mentionCount += 1;
+			stat.promptIds.add(response.promptId);
+
+			if (sentiment === "positive") {
+				stat.positiveCount += 1;
+			}
+
+			if (hasSourceEvidence) {
+				stat.sourceLinkedCount += 1;
+			}
+		}
+
+		const rankedEntities = (response.rankingOrder ?? []).filter((candidate) => candidate.trim().length > 0);
+		for (const rankedEntity of rankedEntities) {
+			const key = isTrackedEntityName(rankedEntity, trackedTerms)
+				? TRACKED_ENTITY_KEY
+				: normalizeContentText(rankedEntity);
+			const label = key === TRACKED_ENTITY_KEY ? "You" : rankedEntity;
+			const stat = ensureStat(key, label);
+			stat.rankedCount += 1;
+		}
+
+		const firstRanked = rankedEntities[0];
+		if (firstRanked) {
+			const key = isTrackedEntityName(firstRanked, trackedTerms)
+				? TRACKED_ENTITY_KEY
+				: normalizeContentText(firstRanked);
+			const label = key === TRACKED_ENTITY_KEY ? "You" : firstRanked;
+			const stat = ensureStat(key, label);
+			stat.firstPlaceCount += 1;
+		}
+	}
+
+	return stats;
+}
+
+function buildShareOfVoiceSnapshot(
+	responses: AIStoredResponse[],
+	now: Date,
+): ShareOfVoiceSnapshot {
+	const trackedTerms = getTrackedTerms();
+	const currentMonthResponses = getResponsesForMonth(responses, now);
+	const entityStats = collectEntityShareStats(currentMonthResponses, trackedTerms);
+	const totalMentions = Array.from(entityStats.values()).reduce(
+		(sum, stat) => sum + stat.mentionCount,
+		0,
+	);
+	const trackedStat = entityStats.get(TRACKED_ENTITY_KEY);
+	const trackedMentions = trackedStat?.mentionCount ?? 0;
+	const trackedShare =
+		totalMentions === 0 ? 0 : clampPercentage(Math.round((trackedMentions / totalMentions) * 100));
+
+	const competitors = Array.from(entityStats.values())
+		.filter((stat) => stat.key !== TRACKED_ENTITY_KEY)
+		.map((stat) => ({
+			label: stat.label,
+			share:
+				totalMentions === 0
+					? 0
+					: clampPercentage(Math.round((stat.mentionCount / totalMentions) * 100)),
+			stat,
+		}))
+		.sort((left, right) => {
+			if (right.share !== left.share) {
+				return right.share - left.share;
+			}
+
+			if (right.stat.firstPlaceCount !== left.stat.firstPlaceCount) {
+				return right.stat.firstPlaceCount - left.stat.firstPlaceCount;
+			}
+
+			return left.label.localeCompare(right.label);
+		});
+
+	const topCompetitors = competitors.slice(0, 2);
+	const othersShare = Math.max(
+		0,
+		100 - trackedShare - topCompetitors.reduce((sum, competitor) => sum + competitor.share, 0),
+	);
+
+	const segments: DashboardClientProps["overview"]["shareOfVoice"] = [
+		{ label: "You", value: trackedShare, color: "#10b981" },
+		...topCompetitors.map((competitor, index) => ({
+			label: competitor.label,
+			value: competitor.share,
+			color: COMPETITOR_PALETTE[index]?.color ?? "#64748b",
+		})),
+	];
+
+	if (othersShare > 0 || segments.length === 1) {
+		segments.push({ label: "Others", value: othersShare, color: "#94a3b8" });
+	}
+
+	return {
+		trackedShare,
+		trackedMentions,
+		totalMentions,
+		topCompetitorLabel: competitors[0]?.label ?? null,
+		topCompetitorShare: competitors[0]?.share ?? 0,
+		segments,
+		competitors,
+	};
+}
+
+function buildShareOfVoiceDeltaLabel(
+	currentShare: number,
+	previousShare: number | null,
+	topCompetitorLabel: string | null,
+	topCompetitorShare: number,
+): { delta: string; tone: DashboardClientProps["kpis"][number]["tone"] } {
+	if (previousShare !== null) {
+		const delta = currentShare - previousShare;
+		if (delta > 0) {
+			return {
+				delta: `+${delta}pts vs previous month`,
+				tone: "up",
+			};
+		}
+
+		if (delta < 0) {
+			return {
+				delta: `${delta}pts vs previous month`,
+				tone: "down",
+			};
+		}
+	}
+
+	if (topCompetitorLabel) {
+		const direction = currentShare >= topCompetitorShare ? "ahead of" : "behind";
+		return {
+			delta: `${direction} ${topCompetitorLabel} at ${topCompetitorShare}%`,
+			tone: currentShare >= topCompetitorShare ? "up" : "down",
+		};
+	}
+
+	return {
+		delta: currentShare > 0 ? "Leading observed share" : "No brand-share data yet",
+		tone: currentShare > 0 ? "up" : "neutral",
+	};
+}
+
+function buildCompetitorCards(
+	responses: AIStoredResponse[],
+	now: Date,
+): DashboardClientProps["competitors"]["cards"] {
+	const snapshot = buildShareOfVoiceSnapshot(responses, now);
+
+	return snapshot.competitors.slice(0, 3).map((competitor, index) => {
+		const palette = COMPETITOR_PALETTE[index] ?? COMPETITOR_PALETTE[COMPETITOR_PALETTE.length - 1]!;
+		const tags: string[] = [];
+
+		if (competitor.stat.firstPlaceCount > 0) {
+			tags.push(`${competitor.stat.firstPlaceCount} top-ranked prompt${competitor.stat.firstPlaceCount === 1 ? "" : "s"}`);
+		}
+
+		if (competitor.stat.rankedCount > 0) {
+			tags.push(`${competitor.stat.rankedCount} ranking mention${competitor.stat.rankedCount === 1 ? "" : "s"}`);
+		}
+
+		if (competitor.stat.sourceLinkedCount > 0) {
+			tags.push(`${competitor.stat.sourceLinkedCount} source-linked response${competitor.stat.sourceLinkedCount === 1 ? "" : "s"}`);
+		}
+
+		if (competitor.stat.positiveCount > 0) {
+			tags.push(`${competitor.stat.positiveCount} positive mention${competitor.stat.positiveCount === 1 ? "" : "s"}`);
+		}
+
+		if (tags.length === 0) {
+			tags.push(`${competitor.stat.promptIds.size} observed prompt${competitor.stat.promptIds.size === 1 ? "" : "s"}`);
+		}
+
+		const whyParts = [
+			`Appears in ${competitor.share}% of observed entity mentions this month.`,
+			competitor.stat.firstPlaceCount > 0
+				? `Led ${competitor.stat.firstPlaceCount} ranking output${competitor.stat.firstPlaceCount === 1 ? "" : "s"}.`
+				: `Observed across ${competitor.stat.promptIds.size} monitored prompt${competitor.stat.promptIds.size === 1 ? "" : "s"}.`,
+			competitor.stat.sourceLinkedCount > 0
+				? `Mentioned alongside cited links or sources in ${competitor.stat.sourceLinkedCount} response${competitor.stat.sourceLinkedCount === 1 ? "" : "s"}.`
+				: `Not yet backed by cited-source volume in the stored runs.`,
+		];
+
+		return {
+			initials: getEntityInitials(competitor.label),
+			name: competitor.label,
+			score: competitor.share,
+			color: palette.color,
+			accentBackground: palette.accentBackground,
+			accentText: palette.accentText,
+			tags: tags.slice(0, 3),
+			why: whyParts.join(" "),
+			action: "Inspect live AI mentions",
+		};
+	});
+}
+
+function buildCompetitorTactics(
+	responses: AIStoredResponse[],
+	now: Date,
+	keywords: KeywordTheme[],
+): string[] {
+	const competitorCards = buildCompetitorCards(responses, now);
+	const tactics: string[] = [];
+	const topCompetitor = competitorCards[0];
+	const secondCompetitor = competitorCards[1];
+	const topKeyword = keywords[0];
+
+	if (topCompetitor) {
+		tactics.push(
+			`${topCompetitor.name} appears in ${topCompetitor.score}% of observed mentions. Build comparison copy and proof-point sections for the prompts where it leads.`,
+		);
+	}
+
+	if (topKeyword) {
+		tactics.push(
+			`Publish content around ${topKeyword.term}. That theme is already recurring in monitored prompts and can be used to challenge competitor-led answers.`,
+		);
+	}
+
+	if (secondCompetitor) {
+		tactics.push(
+			`${secondCompetitor.name} shows up repeatedly in stored runs. Add citations, product proof, and brand-specific FAQ coverage on overlapping prompts.`,
+		);
+	}
+
+	if (tactics.length === 0) {
+		tactics.push("No competitor mentions detected yet. Run more monitored prompts to build a live comparison baseline.");
+	}
+
+	return tactics.slice(0, 4);
+}
+
+function buildKeywordThemes(
+	responses: AIStoredResponse[],
+	now: Date,
+): KeywordTheme[] {
+	const currentMonthResponses = getCurrentMonthResponses(responses, now);
+	const trackedTerms = getTrackedTerms();
+
+	if (currentMonthResponses.length === 0) {
+		return [];
+	}
+
+	const groupedThemes = new Map<
+		string,
+		{
+			label: string;
+			promptIds: Set<string>;
+			responses: AIStoredResponse[];
+			leaders: Map<string, number>;
+		}
+	>();
+
+	for (const response of currentMonthResponses) {
+		const themeKey = extractPromptTheme(response.prompt);
+		if (!themeKey) {
+			continue;
+		}
+
+		const existingGroup = groupedThemes.get(themeKey) ?? {
+			label: themeKey,
+			promptIds: new Set<string>(),
+			responses: [],
+			leaders: new Map<string, number>(),
+		};
+
+		existingGroup.promptIds.add(response.promptId);
+		existingGroup.responses.push(response);
+
+		const entityDetection = response.analysisPayload.entityDetection;
+		const leaderCandidates = [
+			...(entityDetection?.retailerMentions ?? []),
+			...(entityDetection?.brandMentions ?? []),
+			...(response.rankingOrder ?? []),
+		].filter(
+			(candidate) =>
+				candidate.trim().length > 0 &&
+				!trackedTerms.some(
+					(term) => normalizeContentText(term) === normalizeContentText(candidate),
+				),
+		);
+
+		for (const leader of leaderCandidates) {
+			existingGroup.leaders.set(leader, (existingGroup.leaders.get(leader) ?? 0) + 1);
+		}
+
+		groupedThemes.set(themeKey, existingGroup);
+	}
+
+	const maxPromptCount = Math.max(
+		1,
+		...Array.from(groupedThemes.values(), (group) => group.promptIds.size),
+	);
+
+	return Array.from(groupedThemes.values())
+		.map((group) => {
+			const topLeader = Array.from(group.leaders.entries()).sort((left, right) => {
+				if (right[1] !== left[1]) {
+					return right[1] - left[1];
+				}
+
+				return left[0].localeCompare(right[0]);
+			})[0]?.[0] ?? "Observed market";
+			const mentioningResponses = group.responses.filter((response) =>
+				responseMentionsTrackedTerm(response, trackedTerms),
+			).length;
+			const mentionRate =
+				group.responses.length === 0 ? 0 : Math.round((mentioningResponses / group.responses.length) * 100);
+			const volume = clampPercentage(
+				Math.round((group.promptIds.size / maxPromptCount) * 100),
+			);
+
+			return {
+				term: group.label,
+				leader: topLeader,
+				leaderTone: leaderToneForName(topLeader),
+				volume,
+				gap: `You: ${mentionRate}%`,
+				promptCount: group.promptIds.size,
+				mentionRate,
+			};
+		})
+		.sort((left, right) => {
+			if (right.promptCount !== left.promptCount) {
+				return right.promptCount - left.promptCount;
+			}
+
+			if (right.volume !== left.volume) {
+				return right.volume - left.volume;
+			}
+
+			return left.term.localeCompare(right.term);
+		})
+		.slice(0, 6);
+}
+
+function buildProductRankings(
+	responses: AIStoredResponse[],
+	now: Date,
+): ProductRanking[] {
+	const currentMonthResponses = getCurrentMonthResponses(responses, now);
+
+	if (currentMonthResponses.length === 0) {
+		return [];
+	}
+
+	const productsByName = new Map<string, Set<string>>();
+
+	for (const response of currentMonthResponses) {
+		const productMentions = response.analysisPayload.entityDetection?.productMentions ?? [];
+		for (const product of productMentions) {
+			const existingSet = productsByName.get(product) ?? new Set<string>();
+			existingSet.add(response.responseId);
+			productsByName.set(product, existingSet);
+		}
+	}
+
+	return Array.from(productsByName.entries())
+		.map(([name, responseIds]) => ({
+			name,
+			appearance: clampPercentage(
+				Math.round((responseIds.size / Math.max(currentMonthResponses.length, 1)) * 100),
+			),
+			count: responseIds.size,
+		}))
+		.sort((left, right) => {
+			if (right.count !== left.count) {
+				return right.count - left.count;
+			}
+
+			if (right.appearance !== left.appearance) {
+				return right.appearance - left.appearance;
+			}
+
+			return left.name.localeCompare(right.name);
+		})
+		.slice(0, 7)
+		.map((product, index) => ({
+			rank: index + 1,
+			name: product.name,
+			appearance: product.appearance,
+		}));
+}
+
+function buildContentIdeas(
+	responses: AIStoredResponse[],
+	now: Date,
+	keywords: KeywordTheme[],
+	products: ProductRanking[],
+): DashboardClientProps["content"]["ideas"] {
+	const currentMonthResponses = getCurrentMonthResponses(responses, now);
+	const hallucinationClaims = currentMonthResponses
+		.flatMap((response) => response.analysisPayload.accuracyAnalysis?.results ?? [])
+		.filter((result) => result.hallucinationDetected)
+		.sort((left, right) => severityWeight(right.severity) - severityWeight(left.severity));
+
+	const ideas: DashboardClientProps["content"]["ideas"] = [];
+	const topKeyword = keywords[0];
+	const topHallucination = hallucinationClaims[0];
+	const topProduct = products[0];
+
+	if (topKeyword) {
+		ideas.push({
+			tag: "GUIDE - LIVE SIGNAL",
+			tone: "info",
+			title: toTitleCase(topKeyword.term),
+			body: `Observed across ${topKeyword.promptCount} tracked prompt${topKeyword.promptCount === 1 ? "" : "s"}. Your current appearance rate for this theme is ${topKeyword.mentionRate}%.`,
+		});
+	}
+
+	if (topHallucination) {
+		ideas.push({
+			tag: "FAQ PAGE - LIVE SIGNAL",
+			tone: "info",
+			title: topHallucination.matchedGroundTruth
+				? toTitleCase(topHallucination.matchedGroundTruth)
+				: `Clarify ${topHallucination.claim.slice(0, 52)}${topHallucination.claim.length > 52 ? "..." : ""}`,
+			body: `Highest-priority misinformation pattern this month: ${topHallucination.claim}. A dedicated answer page can reduce repeat hallucinations.`,
+		});
+	}
+
+	if (topProduct) {
+		ideas.push({
+			tag: "COMPARISON - LIVE SIGNAL",
+			tone: "warning",
+			title: `${topProduct.name}: buying guide and comparison`,
+			body: `This product appeared in ${topProduct.appearance}% of current-month AI responses where a product was detected, making it a strong candidate for structured comparison content.`,
+		});
+	}
+
+	return ideas.slice(0, 3);
 }
 
 function getVisibilitySummary(score: number): Pick<
@@ -240,6 +915,7 @@ function buildAdSources(
 function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProps {
 	const now = new Date();
 	const currentMonthResponses = getCurrentMonthResponses(responses, now);
+	const previousMonthResponses = getResponsesForMonth(responses, shiftMonth(now, -1));
 	const visibilityMetric = buildDashboardVisibilityMetric(responses, now);
 	const hallucinationsMetric = buildDashboardHallucinationsMetric(responses, now);
 	const referralTrafficMetric = buildDashboardReferralTrafficMetric(responses, now);
@@ -251,6 +927,20 @@ function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProp
 	const distinctPromptCount = new Set(currentMonthResponses.map((response) => response.promptId)).size;
 	const visibilitySummary = getVisibilitySummary(visibilityMetric.score);
 	const topDomainAnalysis = new TopInfluencingDomainsService().analyze(currentMonthResponses);
+	const keywordThemes = buildKeywordThemes(responses, now);
+	const productRankings = buildProductRankings(responses, now);
+	const contentIdeas = buildContentIdeas(responses, now, keywordThemes, productRankings);
+	const shareOfVoiceSnapshot = buildShareOfVoiceSnapshot(responses, now);
+	const previousShareOfVoiceSnapshot =
+		previousMonthResponses.length > 0 ? buildShareOfVoiceSnapshot(previousMonthResponses, shiftMonth(now, -1)) : null;
+	const shareOfVoiceKpi = buildShareOfVoiceDeltaLabel(
+		shareOfVoiceSnapshot.trackedShare,
+		previousShareOfVoiceSnapshot?.trackedShare ?? null,
+		shareOfVoiceSnapshot.topCompetitorLabel,
+		shareOfVoiceSnapshot.topCompetitorShare,
+	);
+	const competitorCards = buildCompetitorCards(responses, now);
+	const competitorTactics = buildCompetitorTactics(responses, now, keywordThemes);
 
 	return {
 		businessName: "Johnson's Home Goods",
@@ -283,9 +973,9 @@ function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProp
 			},
 			{
 				label: "Share of voice",
-				value: "29%",
-				delta: "vs 32% Amazon",
-				tone: "down",
+				value: `${shareOfVoiceSnapshot.trackedShare}%`,
+				delta: shareOfVoiceKpi.delta,
+				tone: shareOfVoiceKpi.tone,
 			},
 		],
 		overview: {
@@ -295,12 +985,7 @@ function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProp
 			platformMetrics: buildPlatformMetrics(responses, now),
 			hallucinationTitle: `${hallucinationsMetric.countLabel} unresolved`,
 			hallucinationAlerts: buildHallucinationAlerts(responses, now),
-			shareOfVoice: [
-				{ label: "You", value: 29, color: "#10b981" },
-				{ label: "Amazon", value: 32, color: "#3b82f6" },
-				{ label: "HomeDepot", value: 24, color: "#f59e0b" },
-				{ label: "Others", value: 15, color: "#94a3b8" },
-			],
+			shareOfVoice: shareOfVoiceSnapshot.segments,
 			visibilityTrend: {
 				labels: ["Wk1", "Wk2", "Wk3", "Wk4", "Wk5", "Wk6"],
 				yourSeries: [12, 11, 10, 9, 9, visibilityMetric.score],
@@ -326,47 +1011,8 @@ function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProp
 			categoryBreakdown: buildPlatformMetrics(responses, now),
 		},
 		competitors: {
-			cards: [
-				{
-					initials: "AZ",
-					name: "Amazon",
-					score: 74,
-					color: "#3b82f6",
-					accentBackground: "#dbeafe",
-					accentText: "#1e40af",
-					tags: ["Schema markup", "Rich reviews", "Product FAQs"],
-					why: "Dominant because product pages expose structured data, deep reviews, and FAQ sections that AI systems can quote with little transformation.",
-					action: "What can I copy from this?",
-				},
-				{
-					initials: "HD",
-					name: "Home Depot",
-					score: 61,
-					color: "#f59e0b",
-					accentBackground: "#fef3c7",
-					accentText: "#92400e",
-					tags: ["How-to guides", "Local inventory", "Video content"],
-					why: "Ranks especially well on instructional prompts because its content library is designed to answer how-to-choose and how-to-install queries directly.",
-					action: "How do I compete here?",
-				},
-				{
-					initials: "WF",
-					name: "Wayfair",
-					score: 44,
-					color: "#ec4899",
-					accentBackground: "#fce7f3",
-					accentText: "#9d174d",
-					tags: ["Room inspiration", "Price match copy", "Spec tables"],
-					why: "Wins comparison prompts because AI can pull structured specifications and side-by-side differentiation language straight into its answers.",
-					action: "Content to create",
-				},
-			],
-			tactics: [
-				"Add FAQ schema to every high-priority product page.",
-				"Publish three buying guides for your highest-repeated prompt themes.",
-				"Create one comparison page per core category.",
-				"Standardize product specification tables across listings.",
-			],
+			cards: competitorCards,
+			tactics: competitorTactics,
 		},
 		improvements: {
 			critical: [
@@ -408,43 +1054,9 @@ function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProp
 				"Applying all critical fixes and recommended improvements would move the visibility score from the current live baseline toward a competitive mid-tier range over the next 90 days.",
 		},
 		content: {
-			keywords: [
-				{ term: "affordable home goods dallas", leader: "Amazon", leaderTone: "blue", volume: 90, gap: "You: 0%" },
-				{ term: "best cordless drill under $100", leader: "HomeDepot", leaderTone: "amber", volume: 80, gap: "You: 4%" },
-				{ term: "home goods store near me dallas", leader: "Amazon", leaderTone: "blue", volume: 75, gap: "You: 9%" },
-				{ term: "same day delivery home goods", leader: "Wayfair", leaderTone: "pink", volume: 65, gap: "You: 12%" },
-				{ term: "kitchen appliance bundles", leader: "HomeDepot", leaderTone: "amber", volume: 58, gap: "You: 18%" },
-				{ term: "how to pick a vacuum cleaner", leader: "HomeDepot", leaderTone: "amber", volume: 50, gap: "You: 31%" },
-			],
-			products: [
-				{ rank: 1, name: "Dyson V8 Cordless", appearance: 82 },
-				{ rank: 2, name: "KitchenAid Mixer", appearance: 74 },
-				{ rank: 3, name: "Instant Pot 6qt", appearance: 61 },
-				{ rank: 4, name: "Ninja Air Fryer", appearance: 48 },
-				{ rank: 5, name: "Roomba i3", appearance: 34 },
-				{ rank: 6, name: "Weber Kettle Grill", appearance: 19 },
-				{ rank: 7, name: "Stanley Thermos", appearance: 11 },
-			],
-			ideas: [
-				{
-					tag: "GUIDE - HIGH PRIORITY",
-					tone: "info",
-					title: "Best home goods stores in Dallas 2026",
-					body: "Targets a repeated local-intent query cluster where your current visibility is low but the commercial intent is strong.",
-				},
-				{
-					tag: "FAQ PAGE - HIGH PRIORITY",
-					tone: "info",
-					title: "Do you offer same-day delivery in Dallas?",
-					body: "Turns an existing service into a crawlable answer surface that can reduce omission-based hallucinations.",
-				},
-				{
-					tag: "COMPARISON - MEDIUM",
-					tone: "warning",
-					title: "Dyson V8 vs V10: which is right for you?",
-					body: "Captures research-stage prompts where AI models favor structured side-by-side product language.",
-				},
-			],
+			keywords: keywordThemes,
+			products: productRankings,
+			ideas: contentIdeas,
 		},
 		sources: {
 			countLabel: formatCompactNumber(topDomainAnalysis.domains.length),
