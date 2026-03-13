@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AIPlatform, type AIResponse } from "@/lib/aiResponse";
 import { EntitySentiment } from "@/lib/ai/entityDetection/types";
 import {
+  type AIProcessedResponseRecord,
   InMemoryAIResponseRepository,
   toProcessedStoredResponse,
   toStoredResponse,
@@ -39,6 +40,8 @@ describe("InMemoryAIResponseRepository", () => {
 
   it("overwrites the raw row with processed analysis data for the same response", async () => {
     const repository = new InMemoryAIResponseRepository();
+    const extractedAt = new Date().toISOString();
+    const analyzedAt = new Date().toISOString();
 
     const response: AIResponse = {
       promptId: "prompt-1",
@@ -55,7 +58,7 @@ describe("InMemoryAIResponseRepository", () => {
 
     await repository.saveRawResponse(response);
 
-    await repository.saveProcessedResponse({
+    const processedRecord: AIProcessedResponseRecord = {
       response,
       entityDetection: {
         responseId: "ChatGPT:prompt-1",
@@ -65,7 +68,7 @@ describe("InMemoryAIResponseRepository", () => {
         claims: ["The best cordless drills include the DeWalt DCD771"],
         sentiment: EntitySentiment.Positive,
         rawText: response.responseText,
-        extractedAt: new Date().toISOString(),
+        extractedAt,
       },
       accuracyAnalysis: {
         responseId: "ChatGPT:prompt-1",
@@ -89,48 +92,14 @@ describe("InMemoryAIResponseRepository", () => {
         hallucinationDetected: false,
         overallSeverity: "low",
         summary: "All 1 claim verified against known facts.",
-        analyzedAt: new Date().toISOString(),
+        analyzedAt,
       },
-    });
+    };
+
+    await repository.saveProcessedResponse(processedRecord);
 
     const byPromptId = await repository.findByPromptId("prompt-1");
-    const processed = toProcessedStoredResponse({
-      response,
-      entityDetection: {
-        responseId: "ChatGPT:prompt-1",
-        brandMentions: ["DeWalt"],
-        productMentions: ["DeWalt DCD771"],
-        retailerMentions: ["Amazon"],
-        claims: ["The best cordless drills include the DeWalt DCD771"],
-        sentiment: EntitySentiment.Positive,
-        rawText: response.responseText,
-        extractedAt: new Date().toISOString(),
-      },
-      accuracyAnalysis: {
-        responseId: "ChatGPT:prompt-1",
-        results: [
-          {
-            claim: "The best cordless drills include the DeWalt DCD771",
-            isAccurate: true,
-            hallucinationDetected: false,
-            severity: "low",
-            confidence: 0.95,
-            explanation: "Claim exactly matches a known ground truth fact.",
-            matchedGroundTruth: "The best cordless drills include the DeWalt DCD771",
-            sourceReference: "https://example.com/reviews",
-          },
-        ],
-        claimCount: 1,
-        accurateCount: 1,
-        hallucinationCount: 0,
-        unverifiableCount: 0,
-        overallAccuracyScore: 1,
-        hallucinationDetected: false,
-        overallSeverity: "low",
-        summary: "All 1 claim verified against known facts.",
-        analyzedAt: new Date().toISOString(),
-      },
-    });
+    const processed = toProcessedStoredResponse(processedRecord);
 
     expect(byPromptId).toEqual(processed);
   });
