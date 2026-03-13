@@ -64,6 +64,32 @@ describe("ManualPromptPage", () => {
           extractedAt: new Date().toISOString(),
         },
       ],
+      accuracyAnalyses: [
+        {
+          responseId: "ChatGPT:prompt-123",
+          results: [
+            {
+              claim: "The best cordless drills include the DeWalt DCD771",
+              isAccurate: true,
+              hallucinationDetected: false,
+              severity: "low",
+              confidence: 0.95,
+              explanation: "Claim exactly matches a known ground truth fact.",
+              matchedGroundTruth: "The best cordless drills include the DeWalt DCD771",
+              sourceReference: "https://example.com/reviews",
+            },
+          ],
+          claimCount: 1,
+          accurateCount: 1,
+          hallucinationCount: 0,
+          unverifiableCount: 0,
+          overallAccuracyScore: 1,
+          hallucinationDetected: false,
+          overallSeverity: "low",
+          summary: "All 1 claim verified against known facts.",
+          analyzedAt: new Date().toISOString(),
+        },
+      ],
     });
 
     render(<ManualPromptPage />);
@@ -83,6 +109,17 @@ describe("ManualPromptPage", () => {
     ).toBeInTheDocument();
     expect(await screen.findByText("Sentiment:", { exact: false })).toBeInTheDocument();
     expect(await screen.findByText("Brands:", { exact: false })).toBeInTheDocument();
+
+    const viewMoreButton = await screen.findByRole("button", { name: "View more" });
+    expect(screen.queryByText("Hallucination & Accuracy Output")).not.toBeInTheDocument();
+
+    fireEvent.click(viewMoreButton);
+
+    expect(await screen.findByText("Hallucination & Accuracy Output")).toBeInTheDocument();
+    expect(await screen.findByText("Summary:", { exact: false })).toBeInTheDocument();
+    expect(await screen.findByText("Overall accuracy score:", { exact: false })).toBeInTheDocument();
+    expect(await screen.findByText("Claim exactly matches a known ground truth fact.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Hide more" })).toBeInTheDocument();
   });
 
   it("shows an error message when request fails", async () => {

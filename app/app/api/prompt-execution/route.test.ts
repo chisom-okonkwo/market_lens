@@ -111,6 +111,21 @@ describe("POST /api/prompt-execution", () => {
           extractedAt: new Date().toISOString(),
         },
       ],
+      accuracyAnalyses: [
+        {
+          responseId: "ChatGPT:prompt-123",
+          results: [],
+          claimCount: 1,
+          accurateCount: 0,
+          hallucinationCount: 0,
+          unverifiableCount: 1,
+          overallAccuracyScore: 0,
+          hallucinationDetected: false,
+          overallSeverity: "low",
+          summary: "0 of 1 claim verified.",
+          analyzedAt: new Date().toISOString(),
+        },
+      ],
     });
 
     const request = new Request("http://localhost:3000/api/prompt-execution", {
@@ -123,6 +138,7 @@ describe("POST /api/prompt-execution", () => {
     const body = (await response.json()) as {
       responses: AIResponse[];
       entityDetections: Array<{ responseId: string }>;
+      accuracyAnalyses: Array<{ responseId: string }>;
     };
 
     expect(response.status).toBe(200);
@@ -130,6 +146,8 @@ describe("POST /api/prompt-execution", () => {
     expect(processCollectedResponsesMock).toHaveBeenCalledWith([aiResponse]);
     expect(body.responses).toEqual([aiResponse]);
     expect(body.entityDetections).toHaveLength(1);
+    expect(body.accuracyAnalyses).toHaveLength(1);
+    expect(body.accuracyAnalyses[0]?.responseId).toBe("ChatGPT:prompt-123");
   });
 
   it("returns 500 when prompt execution fails", async () => {

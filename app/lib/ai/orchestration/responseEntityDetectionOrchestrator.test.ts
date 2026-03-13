@@ -5,24 +5,48 @@ import { EntitySentiment } from "@/lib/ai/entityDetection/types";
 import {
   ResponseEntityDetectionOrchestrator,
   type EntityDetectionRunner,
+  type HallucinationAnalyzer,
 } from "@/lib/ai/orchestration/responseEntityDetectionOrchestrator";
 
 describe("ResponseEntityDetectionOrchestrator", () => {
   it("maps collected responses into entity detections", () => {
-    const entityDetectionRunner: EntityDetectionRunner = {
-      detect: vi.fn().mockReturnValue({
-        responseId: "ChatGPT:prompt-123",
-        brandMentions: ["DeWalt"],
-        productMentions: ["DeWalt DCD771"],
-        retailerMentions: ["Amazon"],
-        claims: ["The best cordless drills include the DeWalt DCD771"],
-        sentiment: EntitySentiment.Positive,
-        rawText: "The best cordless drills include the DeWalt DCD771.",
-        extractedAt: new Date().toISOString(),
-      }),
+    const mockEntityDetectionResult = {
+      responseId: "ChatGPT:prompt-123",
+      brandMentions: ["DeWalt"],
+      productMentions: ["DeWalt DCD771"],
+      retailerMentions: ["Amazon"],
+      claims: ["The best cordless drills include the DeWalt DCD771"],
+      sentiment: EntitySentiment.Positive,
+      rawText: "The best cordless drills include the DeWalt DCD771.",
+      extractedAt: new Date().toISOString(),
     };
 
-    const orchestrator = new ResponseEntityDetectionOrchestrator(entityDetectionRunner);
+    const mockAccuracyAnalysis = {
+      responseId: "ChatGPT:prompt-123",
+      results: [],
+      claimCount: 1,
+      accurateCount: 0,
+      hallucinationCount: 0,
+      unverifiableCount: 1,
+      overallAccuracyScore: 0,
+      hallucinationDetected: false,
+      overallSeverity: "low" as const,
+      summary: "0 of 1 claim verified.",
+      analyzedAt: new Date().toISOString(),
+    };
+
+    const entityDetectionRunner: EntityDetectionRunner = {
+      detect: vi.fn().mockReturnValue(mockEntityDetectionResult),
+    };
+
+    const hallucinationAnalyzer: HallucinationAnalyzer = {
+      analyze: vi.fn().mockReturnValue(mockAccuracyAnalysis),
+    };
+
+    const orchestrator = new ResponseEntityDetectionOrchestrator(
+      entityDetectionRunner,
+      hallucinationAnalyzer,
+    );
 
     const responses: AIResponse[] = [
       {
@@ -44,8 +68,14 @@ describe("ResponseEntityDetectionOrchestrator", () => {
       responseId: "ChatGPT:prompt-123",
       rawText: "The best cordless drills include the DeWalt DCD771.",
     });
+    expect(hallucinationAnalyzer.analyze).toHaveBeenCalledWith({
+      responseId: "ChatGPT:prompt-123",
+      claims: ["The best cordless drills include the DeWalt DCD771"],
+    });
     expect(result.responses).toEqual(responses);
     expect(result.entityDetections).toHaveLength(1);
     expect(result.entityDetections[0]?.brandMentions).toEqual(["DeWalt"]);
+    expect(result.accuracyAnalyses).toHaveLength(1);
+    expect(result.accuracyAnalyses[0]?.responseId).toBe("ChatGPT:prompt-123");
   });
 });

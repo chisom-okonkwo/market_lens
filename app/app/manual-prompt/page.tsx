@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 
 import { type AIResponse } from "@/lib/aiResponse";
 import { type EntityDetectionResult } from "@/lib/ai/entityDetection/types";
+import { type ResponseAccuracyAnalysis } from "@/lib/ai/hallucinationDetection/types";
 import { submitManualPrompt } from "@/lib/manualPromptClient";
 
 const EMPTY_PROMPT_ERROR = "Please enter a prompt before submitting.";
@@ -14,6 +15,8 @@ export default function ManualPromptPage() {
   const [error, setError] = useState("");
   const [responses, setResponses] = useState<AIResponse[]>([]);
   const [entityDetections, setEntityDetections] = useState<EntityDetectionResult[]>([]);
+  const [accuracyAnalyses, setAccuracyAnalyses] = useState<ResponseAccuracyAnalysis[]>([]);
+  const [showAccuracyDetails, setShowAccuracyDetails] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const promptHintId = "manual-prompt-hint";
   const promptFeedbackId = "manual-prompt-feedback";
@@ -31,6 +34,8 @@ export default function ManualPromptPage() {
 
     setResponses([]);
     setEntityDetections([]);
+    setAccuracyAnalyses([]);
+    setShowAccuracyDetails(false);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -41,12 +46,16 @@ export default function ManualPromptPage() {
       setError(EMPTY_PROMPT_ERROR);
       setResponses([]);
       setEntityDetections([]);
+      setAccuracyAnalyses([]);
+      setShowAccuracyDetails(false);
       return;
     }
 
     setError("");
     setResponses([]);
     setEntityDetections([]);
+    setAccuracyAnalyses([]);
+    setShowAccuracyDetails(false);
     setIsSubmitting(true);
 
     try {
@@ -59,6 +68,7 @@ export default function ManualPromptPage() {
 
       setResponses(result.responses ?? []);
       setEntityDetections(result.entityDetections ?? []);
+      setAccuracyAnalyses(result.accuracyAnalyses ?? []);
     } finally {
       setIsSubmitting(false);
     }
@@ -174,6 +184,89 @@ export default function ManualPromptPage() {
                 </article>
               ))}
             </div>
+
+            {accuracyAnalyses.length > 0 ? (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAccuracyDetails((current) => !current);
+                  }}
+                  className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  aria-expanded={showAccuracyDetails}
+                >
+                  {showAccuracyDetails ? "Hide more" : "View more"}
+                </button>
+              </div>
+            ) : null}
+
+            {showAccuracyDetails && accuracyAnalyses.length > 0 ? (
+              <section className="mt-6 border-t border-zinc-200 pt-6">
+                <h3 className="text-base font-semibold text-zinc-900">
+                  Hallucination &amp; Accuracy Output
+                </h3>
+                <div className="mt-4 space-y-4">
+                  {accuracyAnalyses.map((analysis) => (
+                    <article
+                      key={analysis.responseId}
+                      className="rounded-md border border-zinc-200 bg-zinc-50 p-4"
+                    >
+                      <p className="text-xs font-medium uppercase tracking-wide text-zinc-600">
+                        {analysis.responseId}
+                      </p>
+                      <p className="mt-2 text-sm text-zinc-800">
+                        <span className="font-medium">Summary:</span> {analysis.summary}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-800">
+                        <span className="font-medium">Overall accuracy score:</span>{" "}
+                        {analysis.overallAccuracyScore}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-800">
+                        <span className="font-medium">Hallucination detected:</span>{" "}
+                        {analysis.hallucinationDetected ? "Yes" : "No"}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-800">
+                        <span className="font-medium">Overall severity:</span>{" "}
+                        {analysis.overallSeverity}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-800">
+                        <span className="font-medium">Counts:</span>{" "}
+                        {analysis.accurateCount} accurate, {analysis.hallucinationCount} hallucinated,
+                        {" "}{analysis.unverifiableCount} unverifiable
+                      </p>
+                      <div className="mt-3 space-y-3">
+                        {analysis.results.map((result) => (
+                          <div key={`${analysis.responseId}-${result.claim}`} className="rounded border border-zinc-200 bg-white p-3">
+                            <p className="text-sm font-medium text-zinc-900">{result.claim}</p>
+                            <p className="mt-1 text-sm text-zinc-800">
+                              <span className="font-medium">Accurate:</span>{" "}
+                              {result.isAccurate ? "Yes" : "No"}
+                            </p>
+                            <p className="mt-1 text-sm text-zinc-800">
+                              <span className="font-medium">Hallucination:</span>{" "}
+                              {result.hallucinationDetected ? "Yes" : "No"}
+                            </p>
+                            <p className="mt-1 text-sm text-zinc-800">
+                              <span className="font-medium">Severity:</span> {result.severity}
+                            </p>
+                            <p className="mt-1 text-sm text-zinc-800">
+                              <span className="font-medium">Confidence:</span> {result.confidence}
+                            </p>
+                            <p className="mt-1 text-sm text-zinc-800">
+                              <span className="font-medium">Explanation:</span> {result.explanation}
+                            </p>
+                            <p className="mt-1 text-sm text-zinc-800">
+                              <span className="font-medium">Matched ground truth:</span>{" "}
+                              {result.matchedGroundTruth ?? "None"}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </section>
         ) : null}
       </section>
