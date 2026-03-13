@@ -9,6 +9,7 @@ import {
   aiResponseRepository,
 } from "@/lib/ai/storage/aiResponseRepository";
 
+// Executes a single prompt across every configured provider and persists the raw responses.
 export class PromptExecutionService {
   private readonly connectorRegistry: AIConnectorRegistry;
   private readonly responseRepository: AIResponseRepository;
@@ -46,6 +47,7 @@ export class PromptExecutionService {
   }
 }
 
+// Providers are enabled opportunistically based on whichever API keys are present.
 function createDefaultConnectors(): AIConnector[] {
   const connectors: AIConnector[] = [];
 

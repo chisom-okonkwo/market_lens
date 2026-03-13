@@ -15,6 +15,7 @@ import {
 const EMPTY_PROMPT_ERROR = "Please enter a prompt before submitting.";
 const FALLBACK_SUBMIT_ERROR = "Unable to submit prompt right now.";
 
+// This page supports both one-off prompt testing and running the saved monitored prompt set.
 export default function ManualPromptPage() {
 	const [prompt, setPrompt] = useState("");
 	const [error, setError] = useState("");
@@ -47,6 +48,7 @@ export default function ManualPromptPage() {
 		setShowAccuracyDetails(false);
 	};
 
+	// Load the saved prompt set on first render so batch execution is available immediately.
 	useEffect(() => {
 		let isMounted = true;
 
@@ -77,6 +79,7 @@ export default function ManualPromptPage() {
 		};
 	}, []);
 
+	// Manual prompt flow for quick experiments without touching the stored prompt set.
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
@@ -113,6 +116,7 @@ export default function ManualPromptPage() {
 		}
 	};
 
+	// Batch flow for running the monitored prompts already stored in Supabase.
 	const handleRunMonitoredPrompts = async () => {
 		setError("");
 		setMonitoredPromptError("");

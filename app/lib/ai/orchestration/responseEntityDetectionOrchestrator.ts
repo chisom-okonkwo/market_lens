@@ -35,6 +35,7 @@ export interface ProcessedResponseStore {
   saveProcessedResponse(record: AIProcessedResponseRecord): Promise<void>;
 }
 
+// This layer turns raw model output into the processed records used by the dashboard and analytics services.
 export class ResponseEntityDetectionOrchestrator {
   private readonly entityDetectionRunner: EntityDetectionRunner;
   private readonly hallucinationAnalyzer: HallucinationAnalyzer;
@@ -50,6 +51,7 @@ export class ResponseEntityDetectionOrchestrator {
     this.responseStore = responseStore;
   }
 
+  // Each response is enriched, then written back so later reads can work from stored analysis only.
   public async processCollectedResponses(
     responses: AIResponse[],
   ): Promise<CollectedResponsesWithEntities> {

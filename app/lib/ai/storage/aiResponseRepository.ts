@@ -105,6 +105,7 @@ function cloneStoredResponse(response: AIStoredResponse): AIStoredResponse {
   };
 }
 
+// Raw provider output is normalized into the shared storage shape before any analysis runs.
 export function toStoredResponse(response: AIResponse): AIStoredResponse {
   return {
     promptId: response.promptId,
@@ -130,6 +131,7 @@ export function toStoredResponse(response: AIResponse): AIStoredResponse {
   };
 }
 
+// Processed records layer entity and accuracy analysis onto the original stored response.
 export function toProcessedStoredResponse(
   record: AIProcessedResponseRecord,
 ): AIStoredResponse {
@@ -240,6 +242,7 @@ function createSupabaseClient(): SupabaseClient {
   });
 }
 
+// In-memory storage keeps the pipeline usable when Supabase is not configured.
 export class InMemoryAIResponseRepository implements AIResponseRepository {
   private readonly responses = new Map<string, AIStoredResponse>();
 
@@ -263,6 +266,7 @@ export class InMemoryAIResponseRepository implements AIResponseRepository {
   }
 }
 
+// Supabase persistence is the source of truth for the monitored prompt and dashboard flows.
 export class SupabaseAIResponseRepository implements AIResponseRepository {
   private readonly client: SupabaseClient;
 

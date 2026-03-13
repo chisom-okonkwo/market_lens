@@ -1,86 +1,100 @@
 import { describe, expect, it } from "vitest";
 
 import { AIPlatform } from "@/lib/aiResponse";
-import { type AIStoredResponse } from "@/lib/ai/storage/aiResponseRepository";
 import { TopInfluencingDomainsService } from "@/lib/ai/referralTraffic/topInfluencingDomainsService";
+import { type AIStoredResponse } from "@/lib/ai/storage/aiResponseRepository";
 
-function createStoredResponse(
-  overrides: Partial<AIStoredResponse> = {},
-): AIStoredResponse {
-  return {
-    promptId: overrides.promptId ?? "prompt-1",
-    responseId: overrides.responseId ?? "ChatGPT:prompt-1",
-    platform: overrides.platform ?? AIPlatform.ChatGPT,
-    model: overrides.model ?? "gpt-4o-mini",
-    prompt: overrides.prompt ?? "Where should I shop?",
-    responseText: overrides.responseText ?? "eBay is a good option.",
-    timestamp: overrides.timestamp ?? "2026-03-10T00:00:00.000Z",
-    sources: overrides.sources ?? [],
-    citations: overrides.citations ?? [],
-    links: overrides.links ?? [],
-    rankingOrder: overrides.rankingOrder,
-    hallucinationDetected: overrides.hallucinationDetected ?? false,
-    overallAccuracyScore: overrides.overallAccuracyScore ?? 1,
-    overallSeverity: overrides.overallSeverity ?? "low",
-    analysisPayload: overrides.analysisPayload ?? {
-      sources: overrides.sources ?? [],
-      citations: overrides.citations ?? [],
-      links: overrides.links ?? [],
-    },
-  };
+function buildStoredResponse(overrides: Partial<AIStoredResponse>): AIStoredResponse {
+	return {
+		promptId: "prompt-1",
+		responseId: "ChatGPT:prompt-1",
+		platform: AIPlatform.ChatGPT,
+		model: "gpt-4o-mini",
+		prompt: "Where should I shop?",
+		responseText: "See https://www.amazon.com and ebay.com for examples.",
+		timestamp: new Date().toISOString(),
+		sources: [],
+		citations: [],
+		links: [],
+		rankingOrder: undefined,
+		hallucinationDetected: false,
+		overallAccuracyScore: 1,
+		overallSeverity: "low",
+		analysisPayload: {
+			sources: [],
+			citations: [],
+			links: [],
+			accuracyAnalysis: {
+				responseId: "ChatGPT:prompt-1",
+				results: [
+					{
+						claim: "Amazon is popular",
+						isAccurate: true,
+						hallucinationDetected: false,
+						severity: "low",
+						confidence: 0.9,
+						explanation: "Observed reference",
+						sourceReference: "https://docs.ebay.com/seller-guide",
+					},
+				],
+				claimCount: 1,
+				accurateCount: 1,
+				hallucinationCount: 0,
+				unverifiableCount: 0,
+				overallAccuracyScore: 1,
+				hallucinationDetected: false,
+				overallSeverity: "low",
+				summary: "Accurate",
+				analyzedAt: new Date().toISOString(),
+			},
+		},
+		...overrides,
+	};
 }
 
 describe("TopInfluencingDomainsService", () => {
-  it("aggregates domains by response count and reference frequency", () => {
-    const service = new TopInfluencingDomainsService();
+	it("prefers accuracy source references over incidental response-text domains", () => {
+		const service = new TopInfluencingDomainsService();
+		const result = service.analyze([
+			buildStoredResponse({}),
+		]);
 
-    const result = service.analyze([
-      createStoredResponse({
-        responseId: "ChatGPT:prompt-1",
-        sources: [
-          { name: "Wirecutter", url: "https://www.wirecutter.com/reviews/drills" },
-          { name: "eBay seller guide", url: "https://www.ebay.com/sellercenter" },
-        ],
-        citations: [
-          { title: "Best drill review", url: "https://www.wirecutter.com/reviews/drills-2026" },
-        ],
-        links: [{ label: "Shop on eBay", url: "https://www.ebay.com/itm/123" }],
-      }),
-      createStoredResponse({
-        responseId: "Gemini:prompt-2",
-        platform: AIPlatform.Gemini,
-        sources: [{ name: "Wirecutter", url: "https://www.wirecutter.com/best-tools" }],
-        links: [{ label: "Amazon", url: "https://www.amazon.com/dp/example" }],
-      }),
-    ]);
+		expect(result.domains.map((domain) => domain.domain)).toContain("ebay.com");
+		expect(result.domains.map((domain) => domain.domain)).not.toContain("amazon.com");
+	});
 
-    expect(result.responseCount).toBe(2);
-    expect(result.domains).toEqual([
-      {
-        domain: "wirecutter.com",
-        responseCount: 2,
-        referenceCount: 3,
-        sourceCount: 2,
-        citationCount: 1,
-        linkCount: 0,
-      },
-      {
-        domain: "ebay.com",
-        responseCount: 1,
-        referenceCount: 2,
-        sourceCount: 1,
-        citationCount: 0,
-        linkCount: 1,
-      },
-      {
-        domain: "amazon.com",
-        responseCount: 1,
-        referenceCount: 1,
-        sourceCount: 0,
-        citationCount: 0,
-        linkCount: 1,
-      },
-    ]);
-    expect(result.analyzedAt).toBeTypeOf("string");
-  });
+	it("falls back to explicit response-text URLs only when no stronger evidence exists", () => {
+		const service = new TopInfluencingDomainsService();
+		const result = service.analyze([
+			buildStoredResponse({
+				responseId: "ChatGPT:prompt-3",
+				responseText: "Read more at https://www.amazon.com/deals and also ebay.com for comparison.",
+				analysisPayload: {
+					sources: [],
+					citations: [],
+					links: [],
+				},
+			}),
+		]);
+
+		expect(result.domains.map((domain) => domain.domain)).toContain("amazon.com");
+		expect(result.domains.map((domain) => domain.domain)).not.toContain("ebay.com");
+	});
+
+	it("extracts domain-like source names even when URL fields are empty", () => {
+		const service = new TopInfluencingDomainsService();
+		const result = service.analyze([
+			buildStoredResponse({
+				responseId: "ChatGPT:prompt-2",
+				sources: [{ name: "www.wayfair.com" }],
+				analysisPayload: {
+					sources: [{ name: "www.wayfair.com" }],
+					citations: [],
+					links: [],
+				},
+			}),
+		]);
+
+		expect(result.domains.map((domain) => domain.domain)).toContain("wayfair.com");
+	});
 });

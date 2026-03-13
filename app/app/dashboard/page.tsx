@@ -12,6 +12,7 @@ import {
 import { buildDashboardVisibilityMetric } from "@/lib/ai/visibilityScore/dashboardVisibilityMetric";
 import { VisibilityScoreService } from "@/lib/ai/visibilityScore/visibilityScoreService";
 
+// These helpers derive the dashboard view model entirely from stored prompt responses.
 const CONTENT_THEME_STOPWORDS = new Set([
 	"a",
 	"an",
@@ -88,6 +89,7 @@ const COMPETITOR_PALETTE: readonly CompetitorPalette[] = [
 	{ color: "#ec4899", accentBackground: "#fce7f3", accentText: "#9d174d" },
 ];
 
+// Shared formatting and time-window helpers used across multiple dashboard cards.
 function formatCompactNumber(value: number): string {
 	return new Intl.NumberFormat("en-US", {
 		notation: value >= 1000 ? "compact" : "standard",
@@ -245,6 +247,7 @@ function extractCompetitorCandidates(response: AIStoredResponse, trackedTerms: s
 	];
 
 	const competitors: string[] = [];
+// Competitor and share-of-voice sections are inferred from entity detection and ranking data.
 
 	for (const candidate of orderedCandidates) {
 		const normalizedCandidate = normalizeContentText(candidate);
@@ -912,6 +915,7 @@ function buildAdSources(
 	});
 }
 
+// This assembles the full server-side view model consumed by the client dashboard component.
 function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProps {
 	const now = new Date();
 	const currentMonthResponses = getCurrentMonthResponses(responses, now);
@@ -943,7 +947,7 @@ function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProp
 	const competitorTactics = buildCompetitorTactics(responses, now, keywordThemes);
 
 	return {
-		businessName: "Johnson's Home Goods",
+		businessName: "Marcus's Electronics Shop",
 		businessLocation: "Dallas TX",
 		lastScanLabel: formatRelativeTime(latestTimestamp),
 		kpis: [
@@ -1073,9 +1077,10 @@ function buildDashboardProps(responses: AIStoredResponse[]): DashboardClientProp
 	};
 }
 
+// Fallback props keep the dashboard renderable when persistence is unavailable.
 function buildFallbackProps(): DashboardClientProps {
 	return {
-		businessName: "Johnson's Home Goods",
+		businessName: "Marcus's Electronics Shop",
 		businessLocation: "Dallas TX",
 		lastScanLabel: "Unable to load scans",
 		kpis: [

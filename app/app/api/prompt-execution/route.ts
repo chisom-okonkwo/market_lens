@@ -7,6 +7,7 @@ interface PromptExecutionRequest {
   prompt: string;
 }
 
+// Thin API entry point: execute the prompt, then enrich the collected outputs for downstream analytics.
 export async function POST(request: Request) {
   let body: PromptExecutionRequest;
 

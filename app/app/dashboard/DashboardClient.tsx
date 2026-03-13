@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 
+// The server page prepares this view model so the client component can focus on presentation.
 export interface DashboardClientProps {
   businessName: string;
   businessLocation: string;
@@ -102,6 +103,7 @@ const tabLabels: Array<{ id: DashboardTab; label: string }> = [
   { id: "sources", label: "Ad sources" },
 ];
 
+// Small presentation helpers keep the large tabbed layout readable.
 function toneClasses(tone: DashboardClientProps["kpis"][number]["tone"]): string {
   if (tone === "up") {
     return "text-emerald-600";
@@ -302,6 +304,7 @@ function BudgetDonut({ budget }: { budget: DashboardClientProps["sources"]["budg
   );
 }
 
+// Only tab state lives on the client; the metrics themselves are passed in from the server page.
 function DashboardClient(props: DashboardClientProps) {
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
 
@@ -314,7 +317,7 @@ function DashboardClient(props: DashboardClientProps) {
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/70 bg-white/80 px-5 py-4 shadow-[0_16px_48px_rgba(15,23,42,0.08)] backdrop-blur">
           <div className="flex flex-wrap items-center gap-3">
             <div className="text-lg font-bold tracking-[-0.03em] text-slate-950">
-              AI<span className="text-emerald-500">sight</span>
+              Market<span className="text-emerald-500">Lens</span>
             </div>
             <div className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
               {props.businessName} - {props.businessLocation}
